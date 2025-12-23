@@ -4,7 +4,7 @@ from pdf2docx import Converter
 import os
 import tempfile
 import uuid
-import gc  # Garbage Collector (Memory safayi ke liye)
+import gc
 
 app = Flask(__name__)
 CORS(app)
@@ -26,20 +26,28 @@ def convert_pdf_to_word():
     try:
         file.save(temp_pdf)
 
-        # --- MEMORY SAVING TRICK ---
-        # Hum converter ko initialize karenge
+        # 1. Converter Initialize
         cv = Converter(temp_pdf)
-        
-        # 'cpu_count' kam karke aur batch processing se crash rokne ki koshish
-        # Hum multi-processing band kar rahe hain taaki RAM na bhare
-        cv.convert(temp_docx, start=0, end=None, multi_processing=False)
+
+        # 2. Table Detection Settings (Ye lines help karengi table dhoondne me)
+        # Hum intersection aur lines ko scanning force kar rahe hain
+        settings = {
+            "detect_vertical": True,   # Khadi lines dhoondho
+            "detect_horizontal": True, # Leti hui lines dhoondho
+            "connected_border": True,  # Border jude hue hain kya?
+            "snap_tolerance": 4,       # Thoda gap ho tab bhi jod do
+            "join_tolerance": 4,
+        }
+
+        # 3. Conversion with Settings
+        # multi_processing=False (RAM bachane ke liye zaroori hai)
+        cv.convert(temp_docx, start=0, end=None, multi_processing=False, **settings)
         
         cv.close()
         
-        # Memory Turant Saf karo
+        # 4. Memory Cleanup
         del cv
         gc.collect() 
-        # ---------------------------
 
         @after_this_request
         def remove_files(response):
@@ -58,9 +66,10 @@ def convert_pdf_to_word():
         )
 
     except Exception as e:
-        # Error aane par bhi safayi karo
         gc.collect()
-        return {"error": "File too heavy for free server. Try smaller PDF."}, 500
+        # Agar RAM full hone se crash ho, to ye error dikhega
+        print(f"Error: {e}")
+        return {"error": "PDF Table too complex for free server. Try ConvertAPI."}, 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
